@@ -32,9 +32,12 @@ namespace {
 // full request timeout.
 constexpr long kConnectTimeoutSeconds = 30;
 
-// How long a stream may deliver nothing before it is treated as dead. Well
-// above any inter-token gap, well below "never".
-constexpr long kStreamStallSeconds = 120;
+// How long a stream may deliver nothing before it is treated as dead. The
+// quiet period that matters is prompt eval, which emits no bytes at all: a
+// 128k-context llama.cpp backend at ~440 tok/s stays silent for ~300s before
+// the first token. This is set well clear of that so a slow-but-healthy
+// generation is never cut off, while still bounding a wedged worker.
+constexpr long kStreamStallSeconds = 900;
 
 // Resolves the 0-means-default convention shared by every request method.
 // Without this, curl reads 0 as "no timeout" and a silent upstream parks the
