@@ -162,6 +162,12 @@ struct ModelInfo {
     std::string resolved_path(const std::string& type = "main") const { return resolved_paths.count(type) ? resolved_paths.at(type) : ""; }
 
     std::string mmproj() const { return checkpoint("mmproj"); }
+
+    // Backends of the model's recipe it can run on ("backends" in server_models.json);
+    // empty means any.
+    std::vector<std::string> allowed_backends() const {
+        return extra<std::vector<std::string>>("backends", {});
+    }
 };
 
 struct ModelFileInfo {
@@ -328,6 +334,17 @@ public:
     // for the rationale). Pure and hardware-independent, so unit-tested directly.
     static double streaming_working_set_gb(double min_resident_gb, double size_gb);
     static bool streaming_model_exceeds_pool(double working_set_gb, double pool_gb);
+
+    // Per-model backend allowlist helpers (see ModelInfo::allowed_backends). An empty
+    // allowlist permits every backend. first_allowed_backend() returns the first of
+    // `supported` (in preference order) that the allowlist permits, or "" if none.
+    static bool backend_allowed(const std::vector<std::string>& allowed,
+                                const std::string& backend);
+    static std::string first_allowed_backend(const std::vector<std::string>& allowed,
+                                             const std::vector<std::string>& supported);
+    // "the vllm backend rocm" / "the vllm backends rocm, cpu-pace", for messages.
+    static std::string describe_allowed_backends(const std::string& recipe,
+                                                 const std::vector<std::string>& allowed);
 
     // Test-only raw view of the side table without a cache rebuild; prefer
     // recipes_with_all_models_filtered() everywhere else.

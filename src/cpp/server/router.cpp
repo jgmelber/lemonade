@@ -13,6 +13,7 @@
 #include "lemon/backends/vllm/vllm_server.h"
 #include "lemon/server_capabilities.h"
 #include "lemon/streaming_proxy.h"
+#include "lemon/system_info.h"
 #include "lemon/error_types.h"
 #include "lemon/recipe_options.h"
 #include "lemon/auto_tune.h"
@@ -810,6 +811,7 @@ void Router::load_model(const std::string& model_name,
     const std::string canonical_model_name = resolve_model_name(model_name);
     const ResidencyClass requested_residency_class =
         residency_class_for_load_purpose(load_purpose);
+    check_backend_allowed(model_info, options);
     RecipeOptions effective_options = resolve_effective_options(model_info, options);
 
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
@@ -1414,7 +1416,15 @@ RecipeOptions Router::resolve_effective_options(const ModelInfo& model_info,
     RecipeOptions tentative = request_options.inherit(model_info.recipe_options.inherit(
         RecipeOptions(model_info.recipe, config_->recipe_options(""))));
     json backend_json = tentative.get_option(backend_option);
-    const std::string backend = backend_json.is_string() ? backend_json.get<std::string>() : "";
+    std::string backend = backend_json.is_string() ? backend_json.get<std::string>() : "";
+    // With no backend chosen, get_option() would fall back to the recipe's first supported
+    // backend, which may be one the model cannot run on.
+    const std::vector<std::string> allowed_backends = model_info.allowed_backends();
+    const bool pick_allowed_backend = backend.empty() && !allowed_backends.empty();
+    if (pick_allowed_backend) {
+        backend = ModelManager::first_allowed_backend(
+            allowed_backends, SystemInfo::get_supported_backends(model_info.recipe).backends);
+    }
 
     RecipeOptions default_opt(model_info.recipe, config_->recipe_options(backend));
     RecipeOptions arch_opts(model_info.recipe,
@@ -1468,10 +1478,31 @@ RecipeOptions Router::resolve_effective_options(const ModelInfo& model_info,
         effective.set_option(key, resolved_args);
     }
 
+    if (pick_allowed_backend && !backend.empty()) {
+        effective.set_option(backend_option, backend);
+    }
+
     if (const auto* ops = backends::ops_for(model_info.recipe)) {
         ops->resolve_runtime_options(model_info, effective);
     }
     return effective;
+}
+
+void Router::check_backend_allowed(const ModelInfo& model_info,
+                                   const RecipeOptions& request_options) const {
+    const std::vector<std::string> allowed_backends = model_info.allowed_backends();
+    if (allowed_backends.empty()) {
+        return;
+    }
+    const json backend_json = resolve_effective_options(model_info, request_options)
+                                  .get_option(model_info.recipe + "_backend");
+    const std::string backend = backend_json.is_string() ? backend_json.get<std::string>() : "";
+    if (!ModelManager::backend_allowed(allowed_backends, backend)) {
+        throw std::invalid_argument(
+            "Model '" + model_info.model_name + "' only runs on " +
+            ModelManager::describe_allowed_backends(model_info.recipe, allowed_backends) +
+            "; backend '" + backend + "' was selected.");
+    }
 }
 
 RecipeOptions Router::get_model_recipe_options(const std::string& model_name) const {

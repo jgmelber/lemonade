@@ -3860,6 +3860,18 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                            "Detected operating system: " + os_version + ".";
         }
 
+        const std::vector<std::string> allowed_backends = info.allowed_backends();
+        if (!filter_out && !allowed_backends.empty() &&
+            first_allowed_backend(allowed_backends,
+                                  SystemInfo::get_supported_backends(recipe).backends).empty()) {
+            filter_out = true;
+            filter_reason = "This model only runs on " +
+                            describe_allowed_backends(recipe, allowed_backends) +
+                            ", which this system does not support. "
+                            "Detected processor: " + processor + ". "
+                            "Detected operating system: " + os_version + ".";
+        }
+
         // Filter out models too large to run on this machine.
         if (!filter_out && !user_controlled_model && info.size > 0.0) {
             const auto* desc = backends::descriptor_for(recipe);
@@ -3951,6 +3963,30 @@ std::set<std::string> ModelManager::recipes_missing_all_models(
         }
     }
     return hidden;
+}
+
+bool ModelManager::backend_allowed(const std::vector<std::string>& allowed,
+                                   const std::string& backend) {
+    return allowed.empty() || std::find(allowed.begin(), allowed.end(), backend) != allowed.end();
+}
+
+std::string ModelManager::first_allowed_backend(const std::vector<std::string>& allowed,
+                                                const std::vector<std::string>& supported) {
+    for (const auto& backend : supported) {
+        if (backend_allowed(allowed, backend)) {
+            return backend;
+        }
+    }
+    return "";
+}
+
+std::string ModelManager::describe_allowed_backends(const std::string& recipe,
+                                                    const std::vector<std::string>& allowed) {
+    std::string text = "the " + recipe + (allowed.size() == 1 ? " backend " : " backends ");
+    for (size_t i = 0; i < allowed.size(); ++i) {
+        text += (i == 0 ? "" : ", ") + allowed[i];
+    }
+    return text;
 }
 
 double ModelManager::streaming_working_set_gb(double min_resident_gb, double size_gb) {

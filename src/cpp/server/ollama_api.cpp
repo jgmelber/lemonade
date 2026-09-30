@@ -260,6 +260,7 @@ void OllamaApi::auto_load_model(const std::string& model, const json& request_op
 
     auto info = model_manager_->get_model_info(name);
 
+    router_->check_backend_allowed(info, RecipeOptions(info.recipe, request_options));
     // Download if not cached (backends that self-manage downloads pull on load)
     if (!model_manager_->backend_self_manages_downloads(info.recipe) &&
         !model_manager_->is_model_downloaded(name)) {

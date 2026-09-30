@@ -2469,6 +2469,8 @@ void Server::auto_load_model_if_needed(
         return;
     }
 
+    router_->check_backend_allowed(info, RecipeOptions(info.recipe, request_options));
+
     // Download model if not cached (first-time use)
     // IMPORTANT: Use do_not_upgrade=true to prevent checking the remote registry for updates
     // This means:
@@ -6143,6 +6145,8 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         LOG(INFO, "Server") << "Ensuring model loaded: " << model_name;
         LOG(INFO, "Server") << " " << options.to_log_string(false);
         LOG(INFO, "Server") << std::endl;
+
+        router_->check_backend_allowed(info, options);
 
         // Persist concrete request options if requested. A null tombstone is
         // load-scoped, so preserve the existing saved value for that key.

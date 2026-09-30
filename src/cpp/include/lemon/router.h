@@ -162,6 +162,12 @@ public:
     RecipeOptions resolve_effective_options(const ModelInfo& model_info,
                                             const RecipeOptions& request_options) const;
 
+    // Throws std::invalid_argument when these options select a backend outside the model's
+    // allowlist ("backends" in server_models.json). Load paths call it before downloading so
+    // a model that cannot run on the selected backend is not fetched first.
+    void check_backend_allowed(const ModelInfo& model_info,
+                               const RecipeOptions& request_options) const;
+
     // Apply request intent to an already-live process without reloading it.
     // Returns false when the requested model is not currently live.
     bool ensure_loaded_model_residency(

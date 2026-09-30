@@ -2966,6 +2966,14 @@ if(BUILD_TESTING AND EXISTS "${_STREAMING_MEM_FILTER_TEST_SRC}")
     add_cpp_ci_test(StreamingMemoryFilterTest CI ON COMMAND test_streaming_memory_filter)
 endif()
 
+# Per-model backend allowlists ("backends" in server_models.json).
+set(_MODEL_BACKEND_ALLOWLIST_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_backend_allowlist.cpp")
+if(BUILD_TESTING AND EXISTS "${_MODEL_BACKEND_ALLOWLIST_TEST_SRC}")
+    add_executable(test_model_backend_allowlist test/cpp/test_model_backend_allowlist.cpp)
+    target_link_libraries(test_model_backend_allowlist PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ModelBackendAllowlistTest CI ON COMMAND test_model_backend_allowlist)
+endif()
+
 # Remote model registry source parsing, cache namespaces, snapshot fingerprints,
 # and persistence of ModelScope provenance in ModelInfo.
 set(_MODEL_REGISTRY_TEST_SRC

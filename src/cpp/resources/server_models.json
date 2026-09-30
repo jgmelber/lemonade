@@ -2498,6 +2498,9 @@
     "Qwen3.6-27B-FP8-vLLM-lowconc": {
         "checkpoint": "Qwen/Qwen3.6-27B-FP8",
         "recipe": "vllm",
+        "backends": [
+            "rocm"
+        ],
         "suggested": false,
         "labels": [
             "chat",
@@ -2511,6 +2514,9 @@
     "Qwen3.6-27B-FP8-vLLM-highconc": {
         "checkpoint": "Qwen/Qwen3.6-27B-FP8",
         "recipe": "vllm",
+        "backends": [
+            "rocm"
+        ],
         "suggested": false,
         "labels": [
             "chat",
@@ -2536,6 +2542,9 @@
     "Qwen3.6-35B-A3B-FP8-vLLM-lowconc": {
         "checkpoint": "Qwen/Qwen3.6-35B-A3B-FP8",
         "recipe": "vllm",
+        "backends": [
+            "rocm"
+        ],
         "suggested": false,
         "labels": [
             "chat",
@@ -2549,6 +2558,9 @@
     "Qwen3.6-35B-A3B-FP8-vLLM-highconc": {
         "checkpoint": "Qwen/Qwen3.6-35B-A3B-FP8",
         "recipe": "vllm",
+        "backends": [
+            "rocm"
+        ],
         "suggested": false,
         "labels": [
             "chat",
