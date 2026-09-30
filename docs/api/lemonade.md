@@ -1797,7 +1797,8 @@ curl "http://localhost:13305/v1/system-info"
       "cores": 12,
       "threads": 24,
       "available": true,
-      "family": "x86_64"
+      "family": "x86_64",
+      "extra_families": ["x86_64-avx512bf16"]
     },
     "amd_gpu": [
       {
@@ -1912,7 +1913,7 @@ curl "http://localhost:13305/v1/system-info"
   - `free_bytes` - Free bytes available to the Lemonade Server process on the model-storage drive
 
 - `devices` - Hardware devices detected on the system (no software/support information)
-  - `cpu` - CPU information (name, cores, threads)
+  - `cpu` - CPU information (name, cores, threads, `family`). `extra_families` lists instruction-set tokens beyond the base architecture that backends can require (currently `x86_64-avx512bf16` for AVX-512 BF16 CPUs such as AMD Zen 4 and later); it is omitted when empty.
   - `amd_gpu` - Array of AMD GPUs, both integrated and discrete (if present)
   - `nvidia_gpu` - Array of NVIDIA GPUs (if present)
   - `amd_npu` - AMD NPU device (if present)

@@ -12,16 +12,19 @@
 #include <filesystem>
 #include <fstream>
 #include <set>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
 using lemon::system_info_detail::compute_cap_to_sm;
+using lemon::system_info_detail::cpu_isa_families;
 using lemon::system_info_detail::cuda_supported_archs;
 using lemon::system_info_detail::device_matches_constraint;
 using lemon::system_info_detail::gfx_target_version_to_arch;
 using lemon::system_info_detail::gpu_display_name;
 using lemon::system_info_detail::identify_cuda_arch_from_name;
+using lemon::system_info_detail::read_cpuinfo_flags;
 using lemon::system_info_detail::rocm_device_memory_from_sysfs;
 
 static bool expect_string(const char* name,
@@ -357,6 +360,54 @@ int main() {
     failures += !expect_string(
         "neither half available yields an empty name",
         gpu_display_name("", ""), "");
+
+    const std::vector<std::pair<std::string, std::string>> cpu_isa_cases = {
+        {"Zen 3 (AVX2 only)", "fpu sse2 avx avx2 fma bmi2"},
+        {"Zen 4 (AVX-512 + BF16)", "fpu avx2 avx512f avx512dq avx512_bf16 avx512_vnni"},
+        {"Ice Lake (AVX-512 without BF16)", "fpu avx2 avx512f avx512dq avx512_vnni"},
+        {"Sapphire Rapids (AVX-512 BF16 + AMX)",
+         "avx2 avx512f avx512_bf16 amx_bf16 amx_tile amx_int8"},
+        {"arm64", "fp asimd evtstrm aes pmull sha1 sha2 crc32"},
+        {"no flags", ""},
+    };
+    for (const auto& [name, flags] : cpu_isa_cases) {
+        const auto families = cpu_isa_families(flags);
+        const bool has_bf16 = families == std::vector<std::string>{"x86_64-avx512bf16"};
+        const bool want_bf16 = flags.find("avx512_bf16") != std::string::npos;
+        const std::string label = "cpu_isa_families " + name;
+        failures += !expect_bool(label.c_str(), has_bf16, want_bf16);
+        if (!want_bf16) {
+            failures += !expect_bool((label + " is empty").c_str(), families.empty(), true);
+        }
+    }
+    failures += !expect_bool(
+        "avx512_bf16 without avx512f adds no family",
+        cpu_isa_families("avx2 avx512_bf16").empty(), true);
+    failures += !expect_bool(
+        "flag names must match whole words",
+        cpu_isa_families("avx512fx avx512_bf16x").empty(), true);
+
+    {
+        std::istringstream cpuinfo(
+            "processor\t: 0\n"
+            "vendor_id\t: AuthenticAMD\n"
+            "flags\t\t: fpu avx512f avx512_bf16\n"
+            "vmx flags\t: ept vpid\n"
+            "processor\t: 1\n"
+            "flags\t\t: something else\n");
+        failures += !expect_string("read_cpuinfo_flags takes the first flags line",
+                                   read_cpuinfo_flags(cpuinfo), " fpu avx512f avx512_bf16");
+        std::istringstream empty("processor\t: 0\n");
+        failures += !expect_string("read_cpuinfo_flags without a flags line",
+                                   read_cpuinfo_flags(empty), "");
+    }
+
+    failures += !expect_bool(
+        "the AVX-512 BF16 token matches itself",
+        device_matches_constraint("x86_64-avx512bf16", {"x86_64-avx512bf16"}), true);
+    failures += !expect_bool(
+        "a base x86_64 CPU does not match the AVX-512 BF16 token",
+        device_matches_constraint("x86_64", {"x86_64-avx512bf16"}), false);
 
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;

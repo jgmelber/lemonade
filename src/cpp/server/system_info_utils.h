@@ -7,7 +7,9 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <istream>
 #include <set>
+#include <sstream>
 #include <system_error>
 #include <string>
 #include <utility>
@@ -254,6 +256,33 @@ inline bool rocm_device_memory_from_sysfs(const std::filesystem::path& kfd_nodes
     free_bytes = total - used;
     total_bytes = total;
     return true;
+}
+
+// The value of the first "flags" line of /proc/cpuinfo, or "" if none.
+inline std::string read_cpuinfo_flags(std::istream& cpuinfo) {
+    std::string line;
+    while (std::getline(cpuinfo, line)) {
+        if (line.compare(0, 5, "flags") != 0) continue;
+        const size_t colon = line.find(':');
+        if (colon == std::string::npos) continue;
+        return line.substr(colon + 1);
+    }
+    return "";
+}
+
+// CPU family tokens a support row can require beyond the base architecture
+// (x86_64 / arm64), derived from the CPU feature flags.
+inline std::vector<std::string> cpu_isa_families(const std::string& flags) {
+    std::set<std::string> present;
+    std::istringstream iss(flags);
+    std::string flag;
+    while (iss >> flag) present.insert(flag);
+
+    std::vector<std::string> families;
+    if (present.count("avx512f") && present.count("avx512_bf16")) {
+        families.push_back("x86_64-avx512bf16");
+    }
+    return families;
 }
 
 }  // namespace lemon::system_info_detail

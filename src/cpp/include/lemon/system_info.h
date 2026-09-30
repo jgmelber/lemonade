@@ -23,6 +23,8 @@ struct CPUInfo : DeviceInfo {
     int cores = 0;
     int threads = 0;
     int max_clock_speed_mhz = 0;
+    // ISA family tokens beyond the base architecture (e.g. "x86_64-avx512bf16").
+    std::vector<std::string> extra_families;
 };
 
 struct GPUInfo : DeviceInfo {

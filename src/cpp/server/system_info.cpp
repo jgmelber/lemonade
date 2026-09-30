@@ -508,6 +508,7 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     // CPU architectures
     {"x86_64", "x86-64 processors"},
     {"arm64", "ARM64 processors"},
+    {"x86_64-avx512bf16", "AVX-512 BF16 (AMD Zen 4+)"},
 
     // AMD GPU architectures (ROCm) — gfx9* grouped first (gfx09 < gfx10)
     {"gfx908", "AMD Instinct MI100 (CDNA1)"},
@@ -888,6 +889,9 @@ json SystemInfo::get_device_dict() {
         #else
         devices["cpu"]["family"] = "unknown";
         #endif
+        if (!cpu.extra_families.empty()) {
+            devices["cpu"]["extra_families"] = cpu.extra_families;
+        }
         if (!cpu.error.empty()) {
             devices["cpu"]["error"] = cpu.error;
         }
@@ -1126,6 +1130,15 @@ json SystemInfo::build_recipes_info(const json& devices) {
         std::string name = cpu.value("name", "CPU");
         std::string family = cpu.value("family", "");
         detected_devices.push_back({"cpu", name, family, true});
+        // One entry per ISA token so support rows can require e.g. AVX-512 BF16
+        // with the same family matcher used for GPU architectures.
+        if (cpu.contains("extra_families") && cpu["extra_families"].is_array()) {
+            for (const auto& extra : cpu["extra_families"]) {
+                if (extra.is_string()) {
+                    detected_devices.push_back({"cpu", name, extra.get<std::string>(), true});
+                }
+            }
+        }
     } else {
         detected_devices.push_back({"cpu", "CPU", "", true});
     }
@@ -3138,6 +3151,12 @@ CPUInfo LinuxSystemInfo::get_cpu_device() {
     // Calculate total cores
     if (cores_per_socket > 0) {
         cpu.cores = cores_per_socket * sockets;
+    }
+
+    std::ifstream cpuinfo("/proc/cpuinfo");
+    if (cpuinfo) {
+        cpu.extra_families =
+            system_info_detail::cpu_isa_families(system_info_detail::read_cpuinfo_flags(cpuinfo));
     }
 
     if (!cpu.available) {
