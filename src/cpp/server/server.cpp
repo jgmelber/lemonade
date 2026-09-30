@@ -4051,7 +4051,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                         LOG(DEBUG, "Server") << "Response contains tool_calls: " << message["tool_calls"].dump() << std::endl;
                     } else {
                         LOG(DEBUG, "Server") << "Response message does NOT contain tool_calls" << std::endl;
-                        if (message.contains("content")) {
+                        if (message.contains("content") && message["content"].is_string()) {
                             LOG(DEBUG, "Server") << "Message content: " << message["content"].get<std::string>().substr(0, 200) << std::endl;
                         }
                     }
