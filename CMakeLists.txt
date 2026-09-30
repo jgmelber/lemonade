@@ -3317,6 +3317,13 @@ if(BUILD_TESTING AND EXISTS "${_REQUEST_CANCELLATION_TEST_SRC}")
     add_cpp_ci_test(RequestCancellationTest CI ON COMMAND test_request_cancellation)
 endif()
 
+set(_VLLM_SERVED_MODEL_NAME_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_vllm_served_model_name.cpp")
+if(BUILD_TESTING AND EXISTS "${_VLLM_SERVED_MODEL_NAME_TEST_SRC}")
+    add_executable(test_vllm_served_model_name test/cpp/test_vllm_served_model_name.cpp)
+    target_link_libraries(test_vllm_served_model_name PRIVATE lemonade-server-core)
+    add_cpp_ci_test(VllmServedModelNameTest CI ON COMMAND test_vllm_served_model_name)
+endif()
+
 set(_STREAMING_HEARTBEAT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_heartbeat.cpp")
 if(BUILD_TESTING AND EXISTS "${_STREAMING_HEARTBEAT_TEST_SRC}")
     add_executable(test_streaming_heartbeat test/cpp/test_streaming_heartbeat.cpp)
