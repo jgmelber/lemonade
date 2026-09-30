@@ -50,6 +50,32 @@ static void log_process_line(const std::string& line) {
     }
 }
 
+// Backends run as the leader of their own process group so stopping one also stops the helpers it
+// forked (vLLM's EngineCore, for one), which would otherwise be orphaned still holding their memory.
+// A pgid is never reused while any member is alive, so signalling -pid stays safe after the leader
+// has been reaped.
+static bool signal_process_group(pid_t pid, int sig) {
+    errno = 0;
+    if (::kill(-pid, sig) == 0) {
+        return true;
+    }
+    // Not a group leader (setpgid failed); fall back to the process itself.
+    return errno == ESRCH && ::kill(pid, sig) == 0;
+}
+
+static void stop_process_group_members(pid_t pid) {
+    for (int i = 0; i < 50; ++i) {
+        errno = 0;
+        if (::kill(-pid, 0) != 0 && errno == ESRCH) {
+            return;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    LOG(WARNING, "ProcessManager") << "Process group " << pid
+                                   << " outlived its leader, using SIGKILL" << std::endl;
+    ::kill(-pid, SIGKILL);
+}
+
 // Forward declare UnixProcessPlatform base class methods
 class MacOSProcessPlatform : public ProcessPlatform {
 public:
@@ -155,7 +181,9 @@ ProcessHandle MacOSProcessPlatform::spawn(
     sigset_t default_signals;
     sigfillset(&default_signals);
     posix_spawnattr_setsigdefault(&attr, &default_signals);
-    posix_spawnattr_setflags(&attr, POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF);
+    posix_spawnattr_setpgroup(&attr, 0);
+    posix_spawnattr_setflags(&attr, POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF |
+                                        POSIX_SPAWN_SETPGROUP);
 
     // Build envp
     std::vector<std::string> env_strings;
@@ -296,8 +324,7 @@ void MacOSProcessPlatform::terminate(ProcessHandle handle) {
     }
 #endif
 
-    errno = 0;
-    if (::kill(handle.pid, SIGTERM) != 0 && errno == ESRCH) {
+    if (!signal_process_group(handle.pid, SIGTERM) && errno == ESRCH) {
         LOG(INFO, "ProcessManager") << "Process PID " << handle.pid
                                     << " was already gone before SIGTERM" << std::endl;
         return;
@@ -320,11 +347,11 @@ void MacOSProcessPlatform::terminate(ProcessHandle handle) {
 
     if (!exited_gracefully) {
         LOG(WARNING, "ProcessManager") << "Process did not respond to SIGTERM, using SIGKILL" << std::endl;
-        errno = 0;
-        if (::kill(handle.pid, SIGKILL) == 0 || errno != ESRCH) {
+        if (signal_process_group(handle.pid, SIGKILL) || errno != ESRCH) {
             waitpid(handle.pid, &status, 0);
         }
     }
+    stop_process_group_members(handle.pid);
 
     LOG(INFO, "ProcessManager") << "Process terminated, waiting for GPU driver cleanup..." << std::endl;
     std::this_thread::sleep_for(std::chrono::seconds(2));
@@ -424,6 +451,11 @@ int MacOSProcessPlatform::reap(ProcessHandle handle) {
         return -1;
     }
 
+    // A leader that crashed or was killed leaves its helpers behind. Only the group may be
+    // signalled now: the leader's pid is free for reuse.
+    ::kill(-handle.pid, SIGTERM);
+    stop_process_group_members(handle.pid);
+
     if (WIFEXITED(status)) {
         return WEXITSTATUS(status);
     }
@@ -437,8 +469,7 @@ int MacOSProcessPlatform::reap(ProcessHandle handle) {
 
 void MacOSProcessPlatform::kill(ProcessHandle handle) {
     if (handle.pid > 0) {
-        errno = 0;
-        if (::kill(handle.pid, SIGKILL) == 0 || errno != ESRCH) {
+        if (signal_process_group(handle.pid, SIGKILL) || errno != ESRCH) {
             int status = 0;
             waitpid(handle.pid, &status, 0);
         }
@@ -447,7 +478,7 @@ void MacOSProcessPlatform::kill(ProcessHandle handle) {
 
 void MacOSProcessPlatform::terminate_without_cleanup(ProcessHandle handle) {
     if (handle.pid > 0) {
-        ::kill(handle.pid, SIGKILL);
+        signal_process_group(handle.pid, SIGKILL);
     }
 }
 

@@ -4,6 +4,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <string>
@@ -84,6 +85,50 @@ void kill_and_reap(pid_t pid) {
     }
 }
 
+bool wait_until_gone(pid_t pid, std::chrono::milliseconds timeout) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    do {
+        // An orphan is reparented and reaped by init, so a lingering zombie also counts as gone.
+        if ((::kill(pid, 0) != 0 && errno == ESRCH) || is_zombie(pid)) {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    } while (std::chrono::steady_clock::now() < deadline);
+
+    return false;
+}
+
+// Starts `sh -c "sleep 60 & <then>"` through ProcessManager and returns the pid of the
+// backgrounded sleep, which stands in for a helper a backend forks (e.g. vLLM's EngineCore).
+pid_t start_shell_with_helper(const std::string& then, ProcessHandle& handle) {
+    const auto pid_file = std::filesystem::temp_directory_path() /
+                          ("lemonade_pm_test_" + std::to_string(getpid()));
+    std::filesystem::remove(pid_file);
+
+    handle = ProcessManager::start_process(
+        "sh", {"-c", "sleep 60 & echo $! > '" + pid_file.string() + "'; " + then});
+
+    pid_t helper = -1;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (helper <= 0 && std::chrono::steady_clock::now() < deadline) {
+        std::ifstream in(pid_file);
+        if (!(in >> helper)) {
+            helper = -1;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
+    std::filesystem::remove(pid_file);
+    return helper;
+}
+
+void check_helper_stopped(const char* name, pid_t helper) {
+    const bool gone = wait_until_gone(helper, std::chrono::seconds(5));
+    check(name, gone);
+    if (!gone) {
+        ::kill(helper, SIGKILL);
+    }
+}
+
 } // namespace
 
 int main() {
@@ -118,6 +163,53 @@ int main() {
             check("reap_process() does not reap running child",
                   ProcessManager::reap_process(handle) == -1);
             kill_and_reap(child);
+        }
+    }
+
+    {
+        ProcessHandle handle{};
+        const pid_t helper = start_shell_with_helper("wait", handle);
+        check("backend forks a helper", helper > 0);
+        if (helper > 0) {
+            ProcessManager::stop_process(handle);
+            check_helper_stopped("stop_process() stops the backend's helpers", helper);
+        } else {
+            ProcessManager::kill_process(handle);
+        }
+    }
+
+    {
+        ProcessHandle handle{};
+        const pid_t helper = start_shell_with_helper("exit 0", handle);
+        check("exited backend leaves a helper", helper > 0);
+        if (helper > 0) {
+            wait_for_zombie(handle.pid, std::chrono::seconds(5));
+            ProcessManager::stop_process(handle);
+            check_helper_stopped("stop_process() stops helpers of an exited backend", helper);
+        } else {
+            ProcessManager::kill_process(handle);
+        }
+    }
+
+    {
+        ProcessHandle handle{};
+        const pid_t helper = start_shell_with_helper("wait", handle);
+        check("killed backend leaves a helper", helper > 0);
+        ::kill(handle.pid, SIGKILL);
+        wait_for_zombie(handle.pid, std::chrono::seconds(5));
+        ProcessManager::reap_process(handle);
+        if (helper > 0) {
+            check_helper_stopped("reap_process() stops helpers of a killed backend", helper);
+        }
+    }
+
+    {
+        ProcessHandle handle{};
+        const pid_t helper = start_shell_with_helper("wait", handle);
+        check("backend forks a helper for kill_process()", helper > 0);
+        ProcessManager::kill_process(handle);
+        if (helper > 0) {
+            check_helper_stopped("kill_process() stops the backend's helpers", helper);
         }
     }
 
