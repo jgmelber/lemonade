@@ -245,8 +245,8 @@ def main():
     parser.add_argument(
         "--backend",
         required=True,
-        choices=["rocm"],
-        help="Backend to test (currently only rocm is supported)",
+        choices=["rocm", "cpu-pace"],
+        help="Backend to test",
     )
     parser.add_argument(
         "--port",

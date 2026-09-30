@@ -111,10 +111,14 @@ jobs:
   # Validate backend on self-hosted runner
   # ========================================================================
   validate:
-    name: Validate vllm (rocm)
+    name: Validate vllm (${{ matrix.backend }})
     needs: [get-latest-releases, build]
     if: always() && needs.build.result == 'success'
     runs-on: [self-hosted, stx-halo, Linux, X64, lemon-prod]
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [rocm, cpu-pace]
     steps:
       - uses: actions/checkout@v5
         with:
@@ -159,7 +163,7 @@ jobs:
           echo "HOME=$HOME" >> "$GITHUB_ENV"
 
           CACHE_DIR="$(pwd)/ci-cache-vllm"
-          LOGS_DIR="$(pwd)/server-logs-rocm"
+          LOGS_DIR="$(pwd)/server-logs-${{ matrix.backend }}"
           mkdir -p "$CACHE_DIR" "$LOGS_DIR"
           mkdir -p "$RUNNER_TEMP/xdg-runtime"
           chmod 700 "$RUNNER_TEMP/xdg-runtime"
@@ -215,9 +219,9 @@ jobs:
           EXIT_CODE=0
           VALIDATION_ARGS=(
             test/validate_vllm.py
-            --backend rocm
+            --backend ${{ matrix.backend }}
             --port "$PORT"
-            --output vllm_validation_rocm.json
+            --output vllm_validation_${{ matrix.backend }}.json
             --logs-dir "$LOGS_DIR"
           )
           if [ "${LITE_MODE}" = "true" ]; then
@@ -237,16 +241,16 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: validation-results-rocm
-          path: vllm_validation_rocm.json
+          name: validation-results-${{ matrix.backend }}
+          path: vllm_validation_${{ matrix.backend }}.json
           retention-days: 30
 
       - name: Upload server logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: server-logs-rocm
-          path: server-logs-rocm/
+          name: server-logs-${{ matrix.backend }}
+          path: server-logs-${{ matrix.backend }}/
           retention-days: 30
           if-no-files-found: ignore
 

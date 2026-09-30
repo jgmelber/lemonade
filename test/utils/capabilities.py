@@ -76,6 +76,26 @@ CAPABILITIES = {
                 "reranking": "jina-reranker-v1-tiny-en-GGUF",
             },
         },
+        "vllm": {
+            "backends": ["cpu-pace"],
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "chat_completions_async": True,
+                "completions": True,
+                "completions_streaming": True,
+                "completions_async": True,
+                "responses_api": True,
+                "responses_api_streaming": True,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
+                "stop_parameter": True,
+            },
+            "test_models": {
+                "llm": "Qwen3.5-0.8B-FP16-vLLM",
+                "tool_calling": "Qwen3.5-0.8B-FP16-vLLM",
+            },
+        },
         "llamacpp-hrx": {
             "backends": ["hrx"],
             "supports": {"chat_completions": True},

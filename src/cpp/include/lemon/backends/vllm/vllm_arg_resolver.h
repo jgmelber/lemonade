@@ -44,6 +44,16 @@ DeviceClassLaunchPolicy device_class_launch_policy(const std::string& arch,
                                                    bool has_memory_budget_arg,
                                                    bool has_enforce_eager = false);
 
+// vLLM's CPU platform needs torch.compile for PACE's fused-MLP pass, so eager is opt-in, and
+// it honors --kv-cache-memory-bytes directly, so the same fixed cap bounds host RAM.
+DeviceClassLaunchPolicy cpu_launch_policy(bool has_memory_budget_arg, bool has_enforce_eager);
+
+// Arguments the CPU backend appends to the resolved ones. PACE kernels are BF16-only, so the
+// dtype is pinned unless the user chose one. Multimodal checkpoints (e.g. Qwen3.5) otherwise
+// profile their vision encoder at startup, which on CPU costs minutes and several GB, so a
+// model not registered for vision is served text-only unless the user set that flag.
+std::vector<std::string> cpu_launch_args(const VLLMArgResolution& resolved, bool model_has_vision);
+
 constexpr uint64_t kKvCacheCapBytes = 4ULL << 30;
 constexpr const char* kKvCacheCapArg = "4G";
 

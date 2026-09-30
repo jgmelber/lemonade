@@ -383,6 +383,8 @@ def _build_runtime_config(additional_server_args=None):
     # Map --wrapped-server + --backend to the correct recipe option key
     if wrapped_server == "llamacpp" and backend:
         config["llamacpp"] = {"backend": backend}
+    elif wrapped_server == "vllm" and backend:
+        config["vllm"] = {"backend": backend}
     elif wrapped_server == "sd-cpp" and backend:
         config["sdcpp"] = {"backend": backend}
     elif wrapped_server == "thenoise" and backend:

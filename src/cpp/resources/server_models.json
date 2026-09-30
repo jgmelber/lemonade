@@ -2570,6 +2570,55 @@
         ],
         "size": 62.47
     },
+    "Qwen3-0.6B-BF16-vLLM": {
+        "checkpoint": "Qwen/Qwen3-0.6B",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 1.52
+    },
+    "Qwen3-8B-BF16-vLLM": {
+        "checkpoint": "Qwen/Qwen3-8B",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 16.4
+    },
+    "Llama-3.1-8B-Instruct-BF16-vLLM": {
+        "checkpoint": "unsloth/Llama-3.1-8B-Instruct",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 16.08
+    },
+    "phi-4-BF16-vLLM": {
+        "checkpoint": "microsoft/phi-4",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 29.33
+    },
+    "gemma-3-4b-it-BF16-vLLM": {
+        "checkpoint": "unsloth/gemma-3-4b-it",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 8.64
+    },
     "Bert-Phishing-ONNX": {
         "checkpoint": "lemonade-sdk/bert-finetuned-phishing-ONNX",
         "recipe": "onnxruntime",

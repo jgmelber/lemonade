@@ -23,7 +23,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `thenoise` | TheNoise ROCm | yes | no | rocm |
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
 | `trellis` | TRELLIS.2 | yes | no | cuda, rocm, vulkan |
-| `vllm` | vLLM ROCm (experimental) | yes | yes | rocm |
+| `vllm` | vLLM (experimental) | yes | yes | cpu-pace, rocm |
 | `whispercpp` | Whisper.cpp | yes | no | cpu, metal, npu, rocm, vulkan |
 <!-- END GENERATED: backends-overview -->
 
@@ -68,6 +68,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `trellis` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `trellis` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `vllm` | rocm | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
+| `vllm` | cpu-pace | linux | cpu (x86_64-avx512bf16) |
 | `whispercpp` | npu | windows | amd_npu (XDNA2) |
 | `whispercpp` | metal | macos | metal |
 | `whispercpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64) |
@@ -181,7 +182,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `trellis_backend` | `--trellis` | BACKEND | "" | Trellis backend to use |
 | `trellis_args` | `--trellis-args` | ARGS | "" | Custom arguments to pass to trellis-server |
 
-#### `vllm` — vLLM ROCm (experimental)
+#### `vllm` — vLLM (experimental)
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|

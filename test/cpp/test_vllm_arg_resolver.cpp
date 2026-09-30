@@ -12,6 +12,8 @@
 #include <vector>
 
 using lemon::backends::VLLMArgResolution;
+using lemon::backends::cpu_launch_args;
+using lemon::backends::cpu_launch_policy;
 using lemon::backends::resolve_vllm_args;
 using lemon::backends::shared_memory_gpu_utilization;
 using nlohmann::json;
@@ -68,6 +70,16 @@ static bool expect_args(const char* name,
                 actual.has_memory_budget_arg ? "true" : "false",
                 expected.c_str(),
                 expected_memory ? "true" : "false");
+    return ok;
+}
+
+static bool expect_list(const char* name,
+                        const std::vector<std::string>& actual,
+                        const std::string& expected) {
+    std::string actual_args = join(actual);
+    bool ok = actual_args == expected;
+    std::printf("[%s] %s\n  got:  %s\n  want: %s\n",
+                ok ? "PASS" : "FAIL", name, actual_args.c_str(), expected.c_str());
     return ok;
 }
 
@@ -337,6 +349,43 @@ int main() {
         resolve_vllm_args("Qwen3.5-4B-vLLM", "Qwen/Qwen3.5-4B", test_config(), "--quantization gptq"),
         true,
         "gptq");
+
+    {
+        const auto policy = cpu_launch_policy(/*has_memory_budget_arg=*/false, /*has_enforce_eager=*/false);
+        bool ok = !policy.enforce_eager && !policy.force_awq_kernel && policy.cap_kv_cache;
+        std::printf("[%s] cpu policy compiles by default and caps the kv cache\n", ok ? "PASS" : "FAIL");
+        failures += !ok;
+
+        const auto user_policy = cpu_launch_policy(/*has_memory_budget_arg=*/true, /*has_enforce_eager=*/true);
+        ok = user_policy.enforce_eager && !user_policy.force_awq_kernel && !user_policy.cap_kv_cache;
+        std::printf("[%s] cpu policy honors user eager and memory budget\n", ok ? "PASS" : "FAIL");
+        failures += !ok;
+    }
+
+    failures += !expect_list(
+        "cpu args pin bf16 and serve text-only",
+        cpu_launch_args(resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), ""), false),
+        "--dtype bfloat16 --language-model-only");
+
+    failures += !expect_list(
+        "cpu args keep a user dtype",
+        cpu_launch_args(resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), "--dtype float32"), false),
+        "--language-model-only");
+
+    failures += !expect_list(
+        "cpu args keep the vision encoder for vision models",
+        cpu_launch_args(resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), ""), true),
+        "--dtype bfloat16");
+
+    failures += !expect_list(
+        "cpu args respect a user --no-language-model-only",
+        cpu_launch_args(resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), "--no-language-model-only"), false),
+        "--dtype bfloat16");
+
+    failures += !expect_list(
+        "cpu args do not repeat a user --language-model-only",
+        cpu_launch_args(resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), "--language-model-only"), false),
+        "--dtype bfloat16");
 
     // shared_memory_gpu_utilization scales vLLM's startup free-memory demand to what the
     // device itself has free, so a co-tenant process cannot reject a model that fits.

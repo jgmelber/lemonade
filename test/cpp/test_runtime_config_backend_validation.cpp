@@ -87,6 +87,9 @@ int main() {
     expect_accepted("flm", "args", "");
     expect_accepted("ryzenai", "server_bin", "latest");
     expect_accepted("hrx", "hrx_bin", "builtin");
+    expect_accepted("vllm", "cpu_pace_bin", "builtin");
+    expect_accepted("vllm", "cpu_pace_args", "--max-num-seqs 4");
+    expect_unknown_key("vllm", "cpu-pace_bin", "builtin");
 
     expect_rejected("llamacpp", "vulkan_bin", 1, "'llamacpp.vulkan_bin' must be a string");
     expect_rejected("llamacpp", "vulkan_args", 1, "'llamacpp.vulkan_args' must be a string");

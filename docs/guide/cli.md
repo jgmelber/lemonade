@@ -422,7 +422,7 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | auto |
 
-#### vLLM ROCm (experimental) (`vllm` recipe)
+#### vLLM (experimental) (`vllm` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|

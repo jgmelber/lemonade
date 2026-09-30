@@ -24,6 +24,10 @@
 #include <regex>
 #include <sstream>
 
+#ifdef __linux__
+#include <unistd.h>
+#endif
+
 namespace fs = std::filesystem;
 using namespace lemon::utils;
 
@@ -277,6 +281,44 @@ static void cleanup_vllm_rocm_shim_dir(fs::path& shim_dir) {
     shim_dir.clear();
 }
 
+// utils::find_executable_in_path() rejects names containing '+', so "g++" needs its own lookup.
+static bool executable_exists(const std::string& name) {
+#ifdef __linux__
+    auto is_executable = [](const fs::path& candidate) {
+        std::error_code ec;
+        return fs::is_regular_file(candidate, ec) && access(candidate.c_str(), X_OK) == 0;
+    };
+    if (name.find('/') != std::string::npos) {
+        return is_executable(name);
+    }
+    std::stringstream dirs(utils::get_environment_variable_utf8("PATH"));
+    std::string dir;
+    while (std::getline(dirs, dir, ':')) {
+        if (!dir.empty() && is_executable(fs::path(dir) / name)) {
+            return true;
+        }
+    }
+    return false;
+#else
+    (void)name;
+    return true;
+#endif
+}
+
+// PyTorch Inductor JIT-compiles C++ for vLLM's CPU platform (the sampler compiles even
+// with --enforce-eager) using $CXX or g++, and the bundle cannot ship a toolchain. Without
+// one, vLLM dies deep into startup with an Inductor traceback.
+static void require_inductor_cxx_compiler() {
+    const std::string cxx = utils::get_environment_variable_utf8("CXX");
+    const std::string compiler = cxx.empty() ? "g++" : cxx;
+    if (!executable_exists(compiler)) {
+        throw std::runtime_error(
+            "vLLM cpu-pace needs a C++ compiler at runtime (PyTorch compiles CPU kernels on "
+            "first use), but '" + compiler + "' was not found. Install g++ (e.g. "
+            "'sudo apt install g++') or set CXX to a C++ compiler.");
+    }
+}
+
 static void configure_vllm_rocm_env(
     const std::string& backend,
     std::vector<std::pair<std::string, std::string>>& env_vars,
@@ -338,8 +380,16 @@ InstallParams VLLMServer::get_install_params(const std::string& backend, const s
 #else
         throw std::runtime_error("vLLM ROCm is only supported on Linux");
 #endif
+    } else if (backend == "cpu-pace") {
+#ifdef __linux__
+        params.repo = "lemonade-sdk/vllm-rocm";
+        params.filename = version + "-x64.tar.gz";
+#else
+        throw std::runtime_error("vLLM cpu-pace is only supported on Linux");
+#endif
     } else {
-        throw std::runtime_error("vLLM backend '" + backend + "' is not supported. Supported: rocm");
+        throw std::runtime_error("vLLM backend '" + backend +
+                                 "' is not supported. Supported: rocm, cpu-pace");
     }
 
     return params;
@@ -365,6 +415,12 @@ void VLLMServer::load(const std::string& model_name,
     max_model_len_ = ctx_size;
 
     RuntimeConfig::validate_backend_choice("vllm", vllm_backend);
+
+    const bool on_cpu = vllm_backend == "cpu-pace";
+    if (on_cpu) {
+        require_inductor_cxx_compiler();
+    }
+    device_type_ = on_cpu ? DEVICE_CPU : DEVICE_GPU;
 
     backend_manager_->install_backend(vllm::spec()->recipe, vllm_backend);
 
@@ -422,10 +478,12 @@ void VLLMServer::load(const std::string& model_name,
     args.push_back(model_name);
     // Keep eager execution for consumer GPU inference; leave dtype selection to vLLM.
     // Discrete-HBM parts skip it: eager costs decode throughput for no stability gain.
-    const std::string rocm_arch = SystemInfo::get_rocm_arch();
-    const DeviceClassLaunchPolicy launch_policy = device_class_launch_policy(
-        rocm_arch, resolved_vllm_args.has_memory_budget_arg,
-        resolved_vllm_args.has_enforce_eager);
+    const std::string rocm_arch = on_cpu ? "" : SystemInfo::get_rocm_arch();
+    const DeviceClassLaunchPolicy launch_policy = on_cpu
+        ? cpu_launch_policy(resolved_vllm_args.has_memory_budget_arg,
+                            resolved_vllm_args.has_enforce_eager)
+        : device_class_launch_policy(rocm_arch, resolved_vllm_args.has_memory_budget_arg,
+                                     resolved_vllm_args.has_enforce_eager);
     if (launch_policy.enforce_eager) {
         args.push_back("--enforce-eager");
     }
@@ -468,6 +526,12 @@ void VLLMServer::load(const std::string& model_name,
                            << "'; letting vLLM auto-select kernel" << std::endl;
     }
 
+    if (on_cpu) {
+        const auto cpu_args =
+            cpu_launch_args(resolved_vllm_args, has_label(model_info.labels, "vision"));
+        args.insert(args.end(), cpu_args.begin(), cpu_args.end());
+    }
+
     args.push_back("--enable-prefix-caching");
 
     // Avoid vLLM's default gpu_memory_utilization=0.92 on shared-memory systems.
@@ -481,7 +545,7 @@ void VLLMServer::load(const std::string& model_name,
         // will start, so a co-tenant process can still reject a model that fits.
         uint64_t free_bytes = 0;
         uint64_t total_bytes = 0;
-        if (SystemInfo::get_rocm_device_memory(rocm_arch, free_bytes, total_bytes)) {
+        if (!on_cpu && SystemInfo::get_rocm_device_memory(rocm_arch, free_bytes, total_bytes)) {
             const double utilization =
                 shared_memory_gpu_utilization(free_bytes, total_bytes);
             if (utilization > 0.0) {
@@ -518,8 +582,10 @@ void VLLMServer::load(const std::string& model_name,
 
     configure_vllm_rocm_env(vllm_backend, env_vars, rocm_shim_dir_);
 
-    // Enable ROCm flash attention (the launcher script handles LD_LIBRARY_PATH).
-    env_vars.push_back({"FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE"});
+    if (!on_cpu) {
+        // Enable ROCm flash attention (the launcher script handles LD_LIBRARY_PATH).
+        env_vars.push_back({"FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE"});
+    }
     // Prevent system/user Python packages from leaking into the bundled vLLM environment
     env_vars.push_back({"PYTHONNOUSERSITE", "1"});
 
@@ -538,7 +604,7 @@ void VLLMServer::load(const std::string& model_name,
         std::string err = "vllm-server failed to start within timeout";
         // A common cause on gfx1151 is a kernel without the CWSR fix, which makes
         // any GPU dispatch hang or fault. Point users to the docs in that case.
-        if (needs_gfx1151_cwsr_fix()) {
+        if (!on_cpu && needs_gfx1151_cwsr_fix()) {
             err += ". Your kernel may be missing the gfx1151 CWSR fix — "
                    "see https://lemonade-server.ai/gfx1151_linux.html";
         }

@@ -29,7 +29,7 @@ const RECIPE_DISPLAY_NAMES = {
   'sd-cpp': 'stable-diffusion.cpp',
   flm: 'FastFlowLM NPU',
   'ryzenai-llm': 'Ryzen AI SW NPU',
-  vllm: 'vLLM ROCm (experimental)',
+  vllm: 'vLLM (experimental)',
   thenoise: 'thenoise',
   ds4: 'DwarfStar4 (experimental)',
   thinksound: 'ThinkSound',

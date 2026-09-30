@@ -357,6 +357,31 @@ DeviceClassLaunchPolicy device_class_launch_policy(const std::string& arch,
     };
 }
 
+DeviceClassLaunchPolicy cpu_launch_policy(bool has_memory_budget_arg, bool has_enforce_eager) {
+    return {
+        /*enforce_eager*/    has_enforce_eager,
+        /*force_awq_kernel*/ false,
+        /*cap_kv_cache*/     !has_memory_budget_arg,
+    };
+}
+
+std::vector<std::string> cpu_launch_args(const VLLMArgResolution& resolved, bool model_has_vision) {
+    std::vector<std::string> args;
+    if (!resolved.has_dtype_arg) {
+        args.push_back("--dtype");
+        args.push_back("bfloat16");
+    }
+    const bool user_set_language_model_only =
+        std::any_of(resolved.args.begin(), resolved.args.end(), [](const std::string& arg) {
+            return arg.rfind("--language-model-only", 0) == 0 ||
+                   arg.rfind("--no-language-model-only", 0) == 0;
+        });
+    if (!model_has_vision && !user_set_language_model_only) {
+        args.push_back("--language-model-only");
+    }
+    return args;
+}
+
 double shared_memory_gpu_utilization(uint64_t free_bytes, uint64_t total_bytes) {
     // vLLM refuses to start unless `gpu_memory_utilization` of the *total* pool is free,
     // a pre-flight check the kv-cache cap does not relax. Scaling the request down to
