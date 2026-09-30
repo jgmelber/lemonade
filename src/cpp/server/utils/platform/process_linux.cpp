@@ -135,6 +135,32 @@ protected:
         int stderr_pipe[2]);
 };
 
+// Backends run as the leader of their own process group so stopping one also stops the helpers it
+// forked (vLLM's EngineCore, for one), which would otherwise be orphaned still holding their memory.
+// A pgid is never reused while any member is alive, so signalling -pid stays safe after the leader
+// has been reaped.
+static bool signal_process_group(pid_t pid, int sig) {
+    errno = 0;
+    if (::kill(-pid, sig) == 0) {
+        return true;
+    }
+    // Not a group leader (setpgid failed); fall back to the process itself.
+    return errno == ESRCH && ::kill(pid, sig) == 0;
+}
+
+static void stop_process_group_members(pid_t pid) {
+    for (int i = 0; i < 50; ++i) {
+        errno = 0;
+        if (::kill(-pid, 0) != 0 && errno == ESRCH) {
+            return;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    LOG(WARNING, "ProcessManager") << "Process group " << pid
+                                   << " outlived its leader, using SIGKILL" << std::endl;
+    ::kill(-pid, SIGKILL);
+}
+
 // Linux implementation using fork/exec
 pid_t LinuxProcessPlatform::spawn_process(
     const std::string& executable,
@@ -154,7 +180,17 @@ pid_t LinuxProcessPlatform::spawn_process(
 
     if (pid == 0) {
         // Child process
+        setpgid(0, 0);
         prctl(PR_SET_PDEATHSIG, SIGTERM);
+
+        // Outside the terminal's foreground group a read from the tty would stop the child.
+        if (isatty(STDIN_FILENO)) {
+            int dev_null = open("/dev/null", O_RDONLY);
+            if (dev_null >= 0) {
+                dup2(dev_null, STDIN_FILENO);
+                close(dev_null);
+            }
+        }
 
         if (!working_dir.empty()) {
             chdir(working_dir.c_str());
@@ -201,6 +237,8 @@ pid_t LinuxProcessPlatform::spawn_process(
         _exit(1);
     }
 
+    // Also set from the parent so the group exists before any signal is sent to it.
+    setpgid(pid, pid);
     return pid;
 }
 
@@ -329,8 +367,7 @@ void LinuxProcessPlatform::terminate(ProcessHandle handle) {
     }
 #endif
 
-    errno = 0;
-    if (::kill(handle.pid, SIGTERM) != 0 && errno == ESRCH) {
+    if (!signal_process_group(handle.pid, SIGTERM) && errno == ESRCH) {
         LOG(INFO, "ProcessManager") << "Process PID " << handle.pid
                                     << " was already gone before SIGTERM" << std::endl;
         return;
@@ -353,11 +390,11 @@ void LinuxProcessPlatform::terminate(ProcessHandle handle) {
 
     if (!exited_gracefully) {
         LOG(WARNING, "ProcessManager") << "Process did not respond to SIGTERM, using SIGKILL" << std::endl;
-        errno = 0;
-        if (::kill(handle.pid, SIGKILL) == 0 || errno != ESRCH) {
+        if (signal_process_group(handle.pid, SIGKILL) || errno != ESRCH) {
             waitpid(handle.pid, &status, 0);
         }
     }
+    stop_process_group_members(handle.pid);
 
     LOG(INFO, "ProcessManager") << "Process terminated, waiting for GPU driver cleanup..." << std::endl;
     std::this_thread::sleep_for(std::chrono::seconds(2));
@@ -465,6 +502,11 @@ int LinuxProcessPlatform::reap(ProcessHandle handle) {
         return -1;
     }
 
+    // A leader that crashed or was killed leaves its helpers behind. Only the group may be
+    // signalled now: the leader's pid is free for reuse.
+    ::kill(-handle.pid, SIGTERM);
+    stop_process_group_members(handle.pid);
+
     if (WIFEXITED(status)) {
         return WEXITSTATUS(status);
     }
@@ -478,8 +520,7 @@ int LinuxProcessPlatform::reap(ProcessHandle handle) {
 
 void LinuxProcessPlatform::kill(ProcessHandle handle) {
     if (handle.pid > 0) {
-        errno = 0;
-        if (::kill(handle.pid, SIGKILL) == 0 || errno != ESRCH) {
+        if (signal_process_group(handle.pid, SIGKILL) || errno != ESRCH) {
             int status = 0;
             waitpid(handle.pid, &status, 0);
         }
@@ -488,7 +529,7 @@ void LinuxProcessPlatform::kill(ProcessHandle handle) {
 
 void LinuxProcessPlatform::terminate_without_cleanup(ProcessHandle handle) {
     if (handle.pid > 0) {
-        ::kill(handle.pid, SIGKILL);
+        signal_process_group(handle.pid, SIGKILL);
     }
 }
 
