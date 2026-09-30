@@ -50,6 +50,7 @@ public:
 private:
     std::filesystem::path rocm_shim_dir_;
 
+    json with_served_model_name(json request) const;
     json prepare_openai_request(const json& request);
     json fit_openai_max_tokens_to_context(const json& request);
     int64_t count_openai_prompt_tokens(const json& request);

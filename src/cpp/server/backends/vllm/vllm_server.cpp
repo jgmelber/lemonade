@@ -129,8 +129,16 @@ static json load_vllm_model_config(const std::string& config_path,
     return config;
 }
 
+// vLLM only answers to its --served-model-name (the canonical name), but clients may address the
+// model by a public alias such as a user.* model's bare name.
+json VLLMServer::with_served_model_name(json request) const {
+    request["model"] = model_name_;
+    return request;
+}
+
 json VLLMServer::prepare_openai_request(const json& request) {
-    return JsonUtils::with_legacy_max_tokens_alias(fit_openai_max_tokens_to_context(request));
+    return with_served_model_name(
+        JsonUtils::with_legacy_max_tokens_alias(fit_openai_max_tokens_to_context(request)));
 }
 
 // Returns quantization_config.quant_method for the model, or empty string.
@@ -569,7 +577,7 @@ json VLLMServer::completion(const json& request) {
 }
 
 json VLLMServer::responses(const json& request) {
-    return forward_request("/v1/responses", request);
+    return forward_request("/v1/responses", with_served_model_name(request));
 }
 
 void VLLMServer::forward_streaming_request(const std::string& endpoint,
@@ -590,6 +598,12 @@ void VLLMServer::forward_streaming_request(const std::string& endpoint,
             }
             stream_options["include_usage"] = true;
             body = request.dump();
+        } catch (...) {
+            // Forward the original request if it cannot be parsed.
+        }
+    } else if (endpoint == "/v1/responses") {
+        try {
+            body = with_served_model_name(json::parse(request_body)).dump();
         } catch (...) {
             // Forward the original request if it cannot be parsed.
         }
