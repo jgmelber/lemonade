@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -42,6 +43,14 @@ inline const char* slot_policy_to_string(SlotPolicy p) {
         case SlotPolicy::Unmetered:     return "unmetered";
     }
     return "standard";
+}
+
+// Per-backend config.json keys ("<backend>_bin", "<backend>_args") and their
+// LEMONADE_* environment variables can't carry '-', so a backend named
+// "cpu-pace" is configured as "cpu_pace_bin" / LEMONADE_VLLM_CPU_PACE_BIN.
+inline std::string backend_config_key(std::string backend) {
+    std::replace(backend.begin(), backend.end(), '-', '_');
+    return backend;
 }
 
 // Plain data declaring *what a backend is*. This is the single object the
@@ -124,14 +133,23 @@ struct BackendDescriptor {
         return config_section.empty() ? recipe : config_section;
     }
 
+    // Inverse of backend_config_key() over this backend's support rows; a key
+    // matching no row is returned unchanged.
+    std::string backend_from_config_key(const std::string& key) const {
+        for (const auto& row : support) {
+            if (backend_config_key(row.backend) == key) return row.backend;
+        }
+        return key;
+    }
+
     // Build this backend's config.json default section from the schema above.
     // Returns an empty object when the backend has no configurable section.
     nlohmann::json config_defaults() const {
         nlohmann::json block = nlohmann::json::object();
         if (selectable_backend) block["backend"] = "auto";
         if (takes_args) block["args"] = "";
-        for (const auto& v : arg_variants) block[v + "_args"] = "";
-        for (const auto& v : bin_variants) block[v + "_bin"] = "builtin";
+        for (const auto& v : arg_variants) block[backend_config_key(v) + "_args"] = "";
+        for (const auto& v : bin_variants) block[backend_config_key(v) + "_bin"] = "builtin";
         if (config_extra.is_object()) {
             for (auto it = config_extra.begin(); it != config_extra.end(); ++it) {
                 block[it.key()] = it.value();

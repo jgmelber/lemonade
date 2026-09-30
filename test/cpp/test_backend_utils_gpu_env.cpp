@@ -160,6 +160,28 @@ int main() {
         lemon::RuntimeConfig::set_global(nullptr);
     }
 
+    // Test 5: a hyphenated backend name maps to an underscore config key and
+    // environment variable, since neither can carry '-'.
+    {
+        const std::string override_path = std::filesystem::current_path().string();
+        const std::string config_path = std::filesystem::temp_directory_path().string();
+        lemon::RuntimeConfig config(lemon::json{{"vllm", {{"cpu_pace_bin", config_path}}}});
+        lemon::RuntimeConfig::set_global(&config);
+
+        std::string section, bin_key;
+        BackendUtils::build_bin_config_key("vllm", "cpu-pace", section, bin_key);
+        check(section == "vllm" && bin_key == "cpu_pace_bin",
+              "cpu-pace uses the vllm.cpu_pace_bin config key");
+        check(BackendUtils::get_bin_config_value("vllm", "cpu-pace") == config_path,
+              "cpu-pace resolves configured vllm.cpu_pace_bin");
+
+        set_env_var("LEMONADE_VLLM_CPU_PACE_BIN", override_path);
+        check(BackendUtils::get_bin_config_value("vllm", "cpu-pace") == override_path,
+              "cpu-pace resolves LEMONADE_VLLM_CPU_PACE_BIN over config");
+        clear_env_var("LEMONADE_VLLM_CPU_PACE_BIN");
+        lemon::RuntimeConfig::set_global(nullptr);
+    }
+
     if (g_failures > 0) {
         std::cerr << "Total failures: " << g_failures << std::endl;
         return 1;

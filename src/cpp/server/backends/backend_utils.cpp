@@ -319,7 +319,8 @@ namespace lemon::backends {
             config_backend = "rocm";
         }
         out_section = RuntimeConfig::recipe_to_config_section(recipe);
-        out_bin_key = config_backend.empty() ? "server_bin" : (config_backend + "_bin");
+        out_bin_key = config_backend.empty() ? "server_bin"
+                                              : (backend_config_key(config_backend) + "_bin");
     }
 
     std::string BackendUtils::find_external_backend_binary(const std::string& recipe, const std::string& backend) {

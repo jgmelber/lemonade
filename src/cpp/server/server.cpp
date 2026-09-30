@@ -7208,9 +7208,13 @@ void Server::handle_bin_change(const std::string& section,
                                 const std::string& new_value) {
     std::string recipe = RuntimeConfig::config_section_to_recipe(section);
 
-    // bin_key is "<backend>_bin" — strip the suffix to get the backend name
-    // expected by install_backend / find_external_backend_binary.
+    // bin_key is "<backend>_bin" — strip the suffix and map the config-key
+    // form back to the backend name expected by install_backend /
+    // find_external_backend_binary.
     std::string backend = bin_key.substr(0, bin_key.size() - 4);
+    if (const auto* desc = backends::descriptor_for(recipe)) {
+        backend = desc->backend_from_config_key(backend);
+    }
 
     // The "server_bin" key (as in ryzenai.server_bin) is not consumed by the
     // current install flow, so skip the hot-swap rather than attempt an install

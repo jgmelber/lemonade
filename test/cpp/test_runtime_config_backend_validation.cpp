@@ -1,3 +1,4 @@
+#include <lemon/backends/backend_descriptor.h>
 #include <lemon/runtime_config.h>
 
 #include <nlohmann/json.hpp>
@@ -94,6 +95,36 @@ int main() {
             .string();
     expect_rejected("llamacpp", "vulkan_bin", missing_bin,
                     "'llamacpp.vulkan_bin' path does not exist");
+
+    // Hyphenated backend names use underscore config keys ("cpu-pace" ->
+    // "cpu_pace_bin" / "cpu_pace_args").
+    {
+        lemon::BackendDescriptor desc;
+        lemon::BackendSupport row;
+        row.backend = "cpu-pace";
+        desc.support.push_back(row);
+        desc.bin_variants = {"cpu-pace"};
+        desc.arg_variants = {"cpu-pace"};
+        const json defaults = desc.config_defaults();
+        if (desc.backend_from_config_key("cpu_pace") == "cpu-pace" &&
+            desc.backend_from_config_key("rocm") == "rocm" &&
+            defaults.contains("cpu_pace_bin") && defaults.contains("cpu_pace_args")) {
+            std::puts("[PASS] hyphenated backend maps to underscore config keys");
+        } else {
+            std::printf("[FAIL] hyphenated backend config keys: %s\n", defaults.dump().c_str());
+            ++failures;
+        }
+
+        RuntimeConfig config(json{{"vllm", {{"args", "--generic"}, {"cpu_pace_args", "--pace"}}}});
+        const json opts = config.recipe_options("cpu-pace");
+        if (opts.value("vllm_args", "") == "--pace") {
+            std::puts("[PASS] recipe_options(cpu-pace) reads vllm.cpu_pace_args");
+        } else {
+            std::printf("[FAIL] recipe_options(cpu-pace) gave vllm_args=%s\n",
+                        opts.value("vllm_args", json()).dump().c_str());
+            ++failures;
+        }
+    }
 
     return failures == 0 ? 0 : 1;
 }

@@ -68,11 +68,11 @@ static bool is_backend_variant_key(const std::string& config_section,
     for (const auto* desc : lemon::backends::all_descriptors()) {
         if (desc->effective_config_section() != config_section) continue;
         const auto& declared = (suffix == "_bin") ? desc->bin_variants : desc->arg_variants;
-        if (std::find(declared.begin(), declared.end(), variant) != declared.end()) {
-            return true;
+        for (const auto& name : declared) {
+            if (lemon::backend_config_key(name) == variant) return true;
         }
         for (const auto& row : desc->support) {
-            if (row.backend == variant) return true;
+            if (lemon::backend_config_key(row.backend) == variant) return true;
         }
     }
     return false;
@@ -753,7 +753,7 @@ json RuntimeConfig::recipe_options(const std::string& backend) const {
         return s.size() >= suf.size() && s.compare(s.size() - suf.size(), suf.size(), suf) == 0;
     };
 
-    const std::string backend_args = backend + "_args";
+    const std::string backend_args = lemon::backend_config_key(backend) + "_args";
 
     // Translate each backend's nested config.json section into the flat
     // recipe_options format, driven by the descriptor's option list. The flat
