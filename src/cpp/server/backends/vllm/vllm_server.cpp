@@ -535,8 +535,18 @@ void VLLMServer::load(const std::string& model_name,
     }
 
     if (on_cpu) {
-        const auto cpu_args =
-            cpu_launch_args(resolved_vllm_args, has_label(model_info.labels, "vision"));
+        const int numa_nodes = SystemInfo::get_cpu_numa_node_count();
+        // An explicit VLLM_CPU_OMP_THREADS_BIND is otherwise ignored under PACE.
+        const char* bind_env = std::getenv("VLLM_CPU_OMP_THREADS_BIND");
+        const bool bind_omp_threads = numa_nodes > 1 || bind_env != nullptr;
+        if (bind_omp_threads) {
+            LOG(INFO, "vLLM") << "Binding OpenMP threads through vLLM's multiprocess executor ("
+                              << (bind_env ? "VLLM_CPU_OMP_THREADS_BIND=" + std::string(bind_env)
+                                           : std::to_string(numa_nodes) + " NUMA nodes")
+                              << ")" << std::endl;
+        }
+        const auto cpu_args = cpu_launch_args(
+            resolved_vllm_args, has_label(model_info.labels, "vision"), bind_omp_threads);
         args.insert(args.end(), cpu_args.begin(), cpu_args.end());
     }
 

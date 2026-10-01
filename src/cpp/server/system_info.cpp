@@ -49,6 +49,7 @@
 #include <fcntl.h>
 #include <libdrm/amdgpu.h>
 #include <libdrm/amdgpu_drm.h>
+#include <sched.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include "lemon/amdxdna_accel.h"
@@ -4322,6 +4323,27 @@ bool SystemInfo::get_rocm_device_memory(const std::string& arch,
     return system_info_detail::rocm_device_memory_from_sysfs(
         "/sys/class/kfd/kfd/topology/nodes", "/sys/class/drm",
         arch, free_bytes, total_bytes);
+}
+
+int SystemInfo::get_cpu_numa_node_count() {
+#ifdef __linux__
+    std::set<int> allowed_cpus;
+    cpu_set_t mask;
+    CPU_ZERO(&mask);
+    // A mask too small for the machine fails here and leaves every CPU counted.
+    if (sched_getaffinity(0, sizeof(mask), &mask) == 0) {
+        for (int cpu = 0; cpu < CPU_SETSIZE; ++cpu) {
+            if (CPU_ISSET(cpu, &mask)) {
+                allowed_cpus.insert(cpu);
+            }
+        }
+    }
+    const int nodes =
+        system_info_detail::numa_nodes_spanned("/sys/devices/system/node", allowed_cpus);
+    return nodes > 0 ? nodes : 1;
+#else
+    return 1;
+#endif
 }
 
 } // namespace lemon
