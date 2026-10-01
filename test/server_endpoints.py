@@ -1243,6 +1243,55 @@ class EndpointTests(ServerTestBase):
             f"{loaded_after['pid']}"
         )
 
+    def test_012aa_health_reports_resolved_backend(self):
+        """A model loaded with backend "auto" reports the backend it runs on in /health."""
+        config_url = f"http://localhost:{PORT}/internal/config"
+        set_url = f"http://localhost:{PORT}/internal/set"
+        prior = (
+            requests.get(config_url, timeout=TIMEOUT_DEFAULT)
+            .json()
+            .get("llamacpp", {})
+            .get("backend", "auto")
+        )
+        try:
+            response = requests.post(
+                set_url,
+                json={"llamacpp": {"backend": "auto"}},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            requests.post(
+                f"{self.base_url}/unload",
+                json={"model_name": ENDPOINT_TEST_MODEL},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            response = requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": ENDPOINT_TEST_MODEL},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            options = requests.get(
+                f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}/options",
+                timeout=TIMEOUT_DEFAULT,
+            ).json()
+            resolved_backend = options["effective"]["llamacpp_backend"]
+            self.assertNotIn(resolved_backend, ("", "auto"))
+
+            loaded_model = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+            self.assertIsNotNone(loaded_model, "Model should appear in /health")
+            self.assertEqual(
+                loaded_model["recipe_options"].get("llamacpp_backend"),
+                resolved_backend,
+            )
+        finally:
+            requests.post(
+                set_url,
+                json={"llamacpp": {"backend": prior}},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
     def test_012b_load_reloads_on_option_change(self):
         """Test that /load evicts and reloads when options differ.
 

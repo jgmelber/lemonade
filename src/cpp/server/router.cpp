@@ -1468,6 +1468,14 @@ RecipeOptions Router::resolve_effective_options(const ModelInfo& model_info,
         effective.set_option(key, resolved_args);
     }
 
+    // With no backend chosen, the backend falls back to the recipe's first supported one at
+    // load time. Record it so a loaded model reports the backend it actually runs on.
+    const std::vector<std::string> recipe_keys = RecipeOptions::keys_for_recipe(model_info.recipe);
+    if (!backend.empty() && !effective.has_option(backend_option) &&
+        std::find(recipe_keys.begin(), recipe_keys.end(), backend_option) != recipe_keys.end()) {
+        effective.set_option(backend_option, backend);
+    }
+
     if (const auto* ops = backends::ops_for(model_info.recipe)) {
         ops->resolve_runtime_options(model_info, effective);
     }
