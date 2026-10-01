@@ -1417,10 +1417,11 @@ RecipeOptions Router::resolve_effective_options(const ModelInfo& model_info,
         RecipeOptions(model_info.recipe, config_->recipe_options(""))));
     json backend_json = tentative.get_option(backend_option);
     std::string backend = backend_json.is_string() ? backend_json.get<std::string>() : "";
-    // With no backend chosen, get_option() would fall back to the recipe's first supported
+    // With no backend chosen, get_option() has fallen back to the recipe's first supported
     // backend, which may be one the model cannot run on.
     const std::vector<std::string> allowed_backends = model_info.allowed_backends();
-    const bool pick_allowed_backend = backend.empty() && !allowed_backends.empty();
+    const bool pick_allowed_backend =
+        !tentative.has_option(backend_option) && !allowed_backends.empty();
     if (pick_allowed_backend) {
         backend = ModelManager::first_allowed_backend(
             allowed_backends, SystemInfo::get_supported_backends(model_info.recipe).backends);
