@@ -285,4 +285,55 @@ inline std::vector<std::string> cpu_isa_families(const std::string& flags) {
     return families;
 }
 
+// CPU ids in a sysfs cpulist such as "0-15,32,96-111". Malformed entries are skipped.
+inline std::set<int> parse_cpu_list(const std::string& list) {
+    std::set<int> cpus;
+    std::istringstream iss(list);
+    std::string entry;
+    while (std::getline(iss, entry, ',')) {
+        int first = 0;
+        int last = 0;
+        char dash = 0;
+        std::istringstream range(entry);
+        if (!(range >> first)) continue;
+        if (range >> dash) {
+            if (dash != '-' || !(range >> last) || last < first) continue;
+        } else {
+            last = first;
+        }
+        for (int cpu = first; cpu <= last; ++cpu) cpus.insert(cpu);
+    }
+    return cpus;
+}
+
+// How many NUMA nodes under `node_dir` (/sys/devices/system/node) hold at least one of
+// `allowed_cpus`, or any CPU at all when `allowed_cpus` is empty. CPU-less nodes, such as
+// CXL memory expanders, do not count.
+inline int numa_nodes_spanned(const std::filesystem::path& node_dir,
+                              const std::set<int>& allowed_cpus) {
+    namespace fs = std::filesystem;
+
+    int nodes = 0;
+    std::error_code ec;
+    for (fs::directory_iterator it(node_dir, ec), end; it != end && !ec; it.increment(ec)) {
+        const std::string name = it->path().filename().string();
+        if (name.size() <= 4 || name.compare(0, 4, "node") != 0 ||
+            !std::all_of(name.begin() + 4, name.end(),
+                         [](unsigned char c) { return std::isdigit(c); })) {
+            continue;
+        }
+        std::ifstream file(it->path() / "cpulist");
+        std::string list;
+        std::getline(file, list);
+        const std::set<int> cpus = parse_cpu_list(list);
+        if (allowed_cpus.empty() ? !cpus.empty()
+                                 : std::any_of(cpus.begin(), cpus.end(), [&](int cpu) {
+                                       return allowed_cpus.count(cpu) > 0;
+                                   })) {
+            ++nodes;
+        }
+    }
+    return nodes;
+}
+
 }  // namespace lemon::system_info_detail

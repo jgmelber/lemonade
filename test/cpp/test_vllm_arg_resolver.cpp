@@ -364,28 +364,43 @@ int main() {
 
     failures += !expect_list(
         "cpu args pin bf16 and serve text-only",
-        cpu_launch_args(resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), ""), false),
+        cpu_launch_args(resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), ""), false, false),
         "--dtype bfloat16 --language-model-only");
 
     failures += !expect_list(
         "cpu args keep a user dtype",
-        cpu_launch_args(resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), "--dtype float32"), false),
+        cpu_launch_args(resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), "--dtype float32"), false, false),
         "--language-model-only");
 
     failures += !expect_list(
         "cpu args keep the vision encoder for vision models",
-        cpu_launch_args(resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), ""), true),
+        cpu_launch_args(resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), ""), true, false),
         "--dtype bfloat16");
 
     failures += !expect_list(
         "cpu args respect a user --no-language-model-only",
-        cpu_launch_args(resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), "--no-language-model-only"), false),
+        cpu_launch_args(resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), "--no-language-model-only"), false, false),
         "--dtype bfloat16");
 
     failures += !expect_list(
         "cpu args do not repeat a user --language-model-only",
-        cpu_launch_args(resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), "--language-model-only"), false),
+        cpu_launch_args(resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), "--language-model-only"), false, false),
         "--dtype bfloat16");
+
+    failures += !expect_list(
+        "cpu args request the multiprocess executor when threads need binding",
+        cpu_launch_args(resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), ""), false, true),
+        "--dtype bfloat16 --language-model-only --distributed-executor-backend mp");
+
+    failures += !expect_list(
+        "cpu args keep a user-chosen executor",
+        cpu_launch_args(resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), "--distributed-executor-backend uni"), false, true),
+        "--dtype bfloat16 --language-model-only");
+
+    failures += !expect_list(
+        "cpu args keep a user-chosen executor given with '='",
+        cpu_launch_args(resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), "--distributed-executor-backend=uni"), false, true),
+        "--dtype bfloat16 --language-model-only");
 
     // shared_memory_gpu_utilization scales vLLM's startup free-memory demand to what the
     // device itself has free, so a co-tenant process cannot reject a model that fits.

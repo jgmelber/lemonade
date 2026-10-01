@@ -52,7 +52,15 @@ DeviceClassLaunchPolicy cpu_launch_policy(bool has_memory_budget_arg, bool has_e
 // dtype is pinned unless the user chose one. Multimodal checkpoints (e.g. Qwen3.5) otherwise
 // profile their vision encoder at startup, which on CPU costs minutes and several GB, so a
 // model not registered for vision is served text-only unless the user set that flag.
-std::vector<std::string> cpu_launch_args(const VLLMArgResolution& resolved, bool model_has_vision);
+//
+// PACE keeps vLLM's in-process executor for a single worker and leaves OpenMP placement to
+// the launcher, but vLLM only binds threads (VLLM_CPU_OMP_THREADS_BIND) under its
+// multiprocess executor, while it binds memory to one NUMA node either way. On a host whose
+// CPUs span NUMA nodes, the unbound threads straddle nodes and sockets, so `bind_omp_threads`
+// requests the multiprocess executor unless the user chose an executor.
+std::vector<std::string> cpu_launch_args(const VLLMArgResolution& resolved,
+                                         bool model_has_vision,
+                                         bool bind_omp_threads);
 
 constexpr uint64_t kKvCacheCapBytes = 4ULL << 30;
 constexpr const char* kKvCacheCapArg = "4G";

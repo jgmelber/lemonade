@@ -178,6 +178,9 @@ public:
     static bool get_rocm_device_memory(const std::string& arch,
                                        uint64_t& free_bytes,
                                        uint64_t& total_bytes);
+
+    // NUMA nodes holding CPUs this process may run on; 1 where that cannot be read.
+    static int get_cpu_numa_node_count();
 };
 
 // Windows implementation

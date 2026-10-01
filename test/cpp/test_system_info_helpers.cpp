@@ -24,6 +24,8 @@ using lemon::system_info_detail::device_matches_constraint;
 using lemon::system_info_detail::gfx_target_version_to_arch;
 using lemon::system_info_detail::gpu_display_name;
 using lemon::system_info_detail::identify_cuda_arch_from_name;
+using lemon::system_info_detail::numa_nodes_spanned;
+using lemon::system_info_detail::parse_cpu_list;
 using lemon::system_info_detail::read_cpuinfo_flags;
 using lemon::system_info_detail::rocm_device_memory_from_sysfs;
 
@@ -400,6 +402,41 @@ int main() {
         std::istringstream empty("processor\t: 0\n");
         failures += !expect_string("read_cpuinfo_flags without a flags line",
                                    read_cpuinfo_flags(empty), "");
+    }
+
+    failures += !expect_bool(
+        "parse_cpu_list expands ranges and singles",
+        parse_cpu_list("0-3,8,10-11\n") == std::set<int>{0, 1, 2, 3, 8, 10, 11}, true);
+    failures += !expect_bool(
+        "parse_cpu_list of an empty list is empty",
+        parse_cpu_list("\n").empty(), true);
+    failures += !expect_bool(
+        "parse_cpu_list skips malformed entries",
+        parse_cpu_list("x,5-2,7") == std::set<int>{7}, true);
+
+    {
+        // Two sockets with SMT, plus a CPU-less CXL memory node.
+        const fs::path nodes = fs::temp_directory_path() / "lemonade_sysfs_numa";
+        fs::remove_all(nodes);
+        const std::vector<std::pair<std::string, std::string>> node_cpus = {
+            {"node0", "0-3,8-11\n"}, {"node1", "4-7,12-15\n"}, {"node2", "\n"}};
+        for (const auto& [node, cpus] : node_cpus) {
+            fs::create_directories(nodes / node);
+            std::ofstream(nodes / node / "cpulist") << cpus;
+        }
+        fs::create_directories(nodes / "power");
+
+        failures += !expect_bool("numa_nodes_spanned counts nodes with CPUs",
+                                 numa_nodes_spanned(nodes, {}) == 2, true);
+        failures += !expect_bool("numa_nodes_spanned with every CPU allowed",
+                                 numa_nodes_spanned(nodes, parse_cpu_list("0-15")) == 2, true);
+        failures += !expect_bool("numa_nodes_spanned with CPUs pinned to one node",
+                                 numa_nodes_spanned(nodes, parse_cpu_list("0-3,8-11")) == 1, true);
+        failures += !expect_bool("numa_nodes_spanned across nodes by one CPU",
+                                 numa_nodes_spanned(nodes, parse_cpu_list("0-3,4")) == 2, true);
+        failures += !expect_bool("numa_nodes_spanned without a node directory",
+                                 numa_nodes_spanned(nodes / "missing", {}) == 0, true);
+        fs::remove_all(nodes);
     }
 
     failures += !expect_bool(

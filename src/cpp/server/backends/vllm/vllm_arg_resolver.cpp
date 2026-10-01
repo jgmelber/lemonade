@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <initializer_list>
 #include <map>
 #include <regex>
 #include <set>
@@ -365,19 +366,28 @@ DeviceClassLaunchPolicy cpu_launch_policy(bool has_memory_budget_arg, bool has_e
     };
 }
 
-std::vector<std::string> cpu_launch_args(const VLLMArgResolution& resolved, bool model_has_vision) {
+std::vector<std::string> cpu_launch_args(const VLLMArgResolution& resolved,
+                                         bool model_has_vision,
+                                         bool bind_omp_threads) {
+    auto user_set = [&resolved](std::initializer_list<const char*> flags) {
+        return std::any_of(resolved.args.begin(), resolved.args.end(), [&](const std::string& arg) {
+            return std::any_of(flags.begin(), flags.end(), [&](const char* flag) {
+                return arg.rfind(flag, 0) == 0;
+            });
+        });
+    };
+
     std::vector<std::string> args;
     if (!resolved.has_dtype_arg) {
         args.push_back("--dtype");
         args.push_back("bfloat16");
     }
-    const bool user_set_language_model_only =
-        std::any_of(resolved.args.begin(), resolved.args.end(), [](const std::string& arg) {
-            return arg.rfind("--language-model-only", 0) == 0 ||
-                   arg.rfind("--no-language-model-only", 0) == 0;
-        });
-    if (!model_has_vision && !user_set_language_model_only) {
+    if (!model_has_vision && !user_set({"--language-model-only", "--no-language-model-only"})) {
         args.push_back("--language-model-only");
+    }
+    if (bind_omp_threads && !user_set({"--distributed-executor-backend"})) {
+        args.push_back("--distributed-executor-backend");
+        args.push_back("mp");
     }
     return args;
 }
